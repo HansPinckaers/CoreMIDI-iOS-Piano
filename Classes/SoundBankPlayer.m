@@ -2,6 +2,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import "SoundBankPlayer.h"
 #import "OpenALSupport.h"
+#import "NSObject+PWObject.h"
 
 @interface SoundBankPlayer ()
 - (void)initNotes;
@@ -42,15 +43,12 @@
 {
 	[self tearDownAudio];
 	[self tearDownAudioSession];
-	[soundBankName release];
-	[super dealloc];
 }
 
 - (void)setSoundBank:(NSString*)theSoundBankName
 {
 	if (![theSoundBankName isEqualToString:soundBankName])
 	{
-		[soundBankName release];
 		soundBankName = [theSoundBankName copy];
 
 		[self tearDownAudio];
@@ -87,7 +85,7 @@
 	for (int t = 0; t < NUM_NOTES; ++t)
 	{
 		notes[t].pitch = 440.0f * pow(2, (t - 69)/12.0);  // A4 = MIDI key 69
-		notes[t].bufferIndex = -1;
+//		notes[t].bufferIndexes[0] = -1;
 		notes[t].panning = 0.0f;
 	}
 
@@ -101,37 +99,75 @@
 }
 
 - (void)loadSoundBank:(NSString*)filename
-{
-	NSString* path = [[NSBundle mainBundle] pathForResource:filename ofType:@"plist"];
-	NSArray* array = [NSArray arrayWithContentsOfFile:path];
-	if (array == nil)
-	{
-		NSLog(@"Could not load soundbank '%@'", path);
-		return;
-	}
+{    
+	sampleRate = 32000;
 
-	sampleRate = [(NSString*)[array objectAtIndex:0] intValue];
+    NSArray *sounds = [[NSBundle mainBundle] pathsForResourcesOfType:@"m4a" inDirectory:nil];
 
-	numBuffers = (array.count - 1) / 3;
+	numBuffers = sounds.count;
 	if (numBuffers > MAX_BUFFERS)
 		numBuffers = MAX_BUFFERS;
+    
+    int t = 0;
+    int midiStart = 0;
+    int midiEnd = 0;
+    NSInteger previousMidi = 0;
+    
+    for(NSString *fullFilename in sounds)
+    {
+        NSString *filename = [fullFilename lastPathComponent];
 
-	int midiStart = 0;
-	for (int t = 0; t < numBuffers; ++t)
-	{
-		buffers[t].filename = [array objectAtIndex:1 + t*3];
-		int midiEnd = [(NSString*)[array objectAtIndex:1 + t*3 + 1] intValue];
-		int rootKey = [(NSString*)[array objectAtIndex:1 + t*3 + 2] intValue];
-		buffers[t].pitch = notes[rootKey].pitch;
+        // example: pno051v115le.caf
+        NSInteger midi = [[filename substringWithRange:NSMakeRange(3, 3)] integerValue];
+        NSInteger vel = [[filename substringWithRange:NSMakeRange(7, 3)] integerValue];
+        
+        // find next note midi
+        NSString *nextNote = nil;
+        int indexCurrentNote = [sounds indexOfObject:fullFilename];
+        int i = indexCurrentNote;
+        NSInteger nextMidi = 0;
+        while (!nextNote && i < [sounds count]) {
+            NSString *possibleNextNoteFileName = [[sounds objectAtIndex:i] lastPathComponent];
+            nextMidi = [[possibleNextNoteFileName substringWithRange:NSMakeRange(3, 3)] integerValue];
 
-		if (t == numBuffers - 1)
-			midiEnd = 127;
-
+            if(midi != nextMidi)
+            {
+                nextNote = possibleNextNoteFileName;
+            }
+            
+            i++;
+        }
+        
+        // first change midiStart if needed
+        if(previousMidi != midi)
+        {
+            midiStart = midiEnd + 1;
+        }
+        
+        // than change midiEnd
+        if(nextNote)
+        {
+            midiEnd = floor((nextMidi + midi) / 2);
+        }
+        else {
+            midiEnd = 127;
+        }
+        
+        buffers[t].pitch = notes[midi].pitch;
+        buffers[t].velocity = vel;        
+        buffers[t].filename = (__bridge_retained CFStringRef) [filename stringByReplacingOccurrencesOfString:@".m4a" withString:@""];
+                
 		for (int n = midiStart; n <= midiEnd; ++n)
-			notes[n].bufferIndex = t;
-
-		midiStart = midiEnd + 1;
-	}
+        {
+            int currentIndex = notes[n].numberOfBuffers;
+            notes[n].bufferIndexes[currentIndex] = t;
+            notes[n].numberOfBuffers += 1;                 
+        }
+        
+        previousMidi = midi;
+        
+        t++;
+    }
 }
 
 #pragma mark -
@@ -139,7 +175,7 @@
 
 static void interruptionListener(void* inClientData, UInt32 inInterruptionState)
 {
-	SoundBankPlayer* player = (SoundBankPlayer*)inClientData;
+	SoundBankPlayer* player = (__bridge SoundBankPlayer*)inClientData;
 	if (inInterruptionState == kAudioSessionBeginInterruption)
 		[player audioSessionBeginInterruption];
 	else if (inInterruptionState == kAudioSessionEndInterruption)
@@ -154,7 +190,7 @@ static void interruptionListener(void* inClientData, UInt32 inInterruptionState)
 
 - (void)setUpAudioSession
 {
-	AudioSessionInitialize(NULL, NULL, interruptionListener, self);
+	AudioSessionInitialize(NULL, NULL, interruptionListener, (__bridge void *)(self));
 	[self registerAudioSessionCategory];
 	AudioSessionSetActive(true);
 }
@@ -222,8 +258,8 @@ static void interruptionListener(void* inClientData, UInt32 inInterruptionState)
 			exit(1);
 		}
 
-		NSString* path = [[NSBundle mainBundle] pathForResource:buffers[t].filename ofType:@"caf"];
-		CFURLRef fileURL = (CFURLRef)[[NSURL fileURLWithPath:path] retain];
+		NSString* path = [[NSBundle mainBundle] pathForResource:(__bridge NSString*)buffers[t].filename ofType:@"m4a"];
+		CFURLRef fileURL = (__bridge_retained CFURLRef)[NSURL fileURLWithPath:path];
 		if (fileURL == NULL)
 		{
 			NSLog(@"Could not find file '%@'", path);
@@ -331,15 +367,34 @@ static void interruptionListener(void* inClientData, UInt32 inInterruptionState)
 		return;
 	}
 
-	Note* note = notes + midiNoteNumber;
-	if (note->bufferIndex != -1)
+	Note* note = &notes[midiNoteNumber];
+    
+    int optimalVelocity = gain / 0.4f * 127;
+    
+    int bufferIndex = 0;
+    int distance = INT_MAX;
+    
+    for(int t = 0; t < note->numberOfBuffers; t++)
+    {
+        Buffer *buffer = &buffers[notes[midiNoteNumber].bufferIndexes[t]];
+        
+        int currentDistance = abs(buffer->velocity - optimalVelocity);
+        if(currentDistance < distance)
+        {
+            bufferIndex = t;
+            distance = currentDistance;
+        }
+    }
+    
+	if (note->bufferIndexes[bufferIndex] != -1)
 	{
 		int sourceIndex = [self findAvailableSource];
 		if (sourceIndex != -1)
 		{
 			alGetError();  // clear any errors
 
-			Buffer* buffer = buffers + note->bufferIndex;
+			Buffer* buffer = &buffers[notes[midiNoteNumber].bufferIndexes[bufferIndex]];
+
 			Source* source = sources + sourceIndex;
 
 			source->time = [NSDate timeIntervalSinceReferenceDate];
@@ -350,7 +405,8 @@ static void interruptionListener(void* inClientData, UInt32 inInterruptionState)
 			alSourcei(source->sourceId, AL_LOOPING, self.loopNotes ? AL_TRUE : AL_FALSE);
 			alSourcef(source->sourceId, AL_REFERENCE_DISTANCE, 100.0f);
 			alSourcef(source->sourceId, AL_GAIN, gain);
-		
+            LogMessageCompat(@"playing: %@ pitch change: %f", buffer->filename, note->pitch/buffer->pitch);
+
 			float sourcePos[] = { note->panning, 0.0f, 0.0f };
 			alSourcefv(source->sourceId, AL_POSITION, sourcePos);
 
@@ -402,13 +458,34 @@ static void interruptionListener(void* inClientData, UInt32 inInterruptionState)
 	{
 		if (sources[t].noteIndex == midiNoteNumber)
 		{
-			alSourceStop(sources[t].sourceId);
-
+            [self internalFadeSource:sources[t]];
+            
 			ALenum error = alGetError();
 			if (error != AL_NO_ERROR)
 				NSLog(@"Error stopping source: %x", error);
 		}
 	}
+}
+
+- (void)internalFadeSource:(Source)src
+{
+    ALfloat value;
+    
+    alGetSourcef(src.sourceId, AL_GAIN, &value);
+    
+    value -= 0.02f;    
+    
+    if(value <= 0.0f){
+        alSourceStop(src.sourceId);   
+    }
+    else
+    {
+        alSourcef(src.sourceId, AL_GAIN, value);
+        
+        [self performBlock:^{
+            [self internalFadeSource:src];
+        } afterDelay:0.01f];
+    }
 }
 
 - (void)allNotesOff
@@ -423,8 +500,8 @@ static void interruptionListener(void* inClientData, UInt32 inInterruptionState)
 
 	for (int t = 0; t < NUM_SOURCES; ++t)
 	{
-		alSourceStop(sources[t].sourceId);
-
+        [self internalFadeSource:sources[t]];
+        
 		ALenum error = alGetError();
 		if (error != AL_NO_ERROR)
 			NSLog(@"Error stopping source: %x", error);

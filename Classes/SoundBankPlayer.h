@@ -15,6 +15,7 @@
  * there can be in the sound bank.
  */
 #define MAX_BUFFERS 128
+#define MAX_VELOCITIES 10
 
 /*!
  * How many OpenAL sources we will use. Each source plays a single buffer, so
@@ -22,7 +23,7 @@
  * to the number of simultaneously playing sources that OpenAL supports.
  * http://stackoverflow.com/questions/2871905/openal-determine-maximum-sources
  */ 
-#define NUM_SOURCES 32
+#define NUM_SOURCES 31
 
 /*!
  * How many Note objects we have. We can handle the entire MIDI range (0-127).
@@ -34,13 +35,13 @@
  */
 typedef struct
 {
-	float pitch;         ///< pitch of the note in the sound sample
-	NSString* filename;  ///< name of the sound sample file
-	ALuint bufferId;     ///< OpenAL buffer name
-	void* data;          ///< the buffer sample data
+	float pitch;                    ///< pitch of the note in the sound sample
+	ALuint bufferId;                ///< OpenAL buffer name
+    void* data;                     ///< the buffer sample data
+    CFStringRef filename;           ///< name of the sound sample file
+    int velocity;                   ///< velocity of the note in the sound sample
 }
 Buffer;
-
 /*!
  * Source tracks an OpenAL source.
  */
@@ -59,8 +60,10 @@ Source;
 typedef struct
 {
 	float pitch;      ///< pitch of the note
-	int bufferIndex;  ///< which buffer is assigned to this note (-1 = none)
+//	int bufferIndex;  ///< which buffer is assigned to this note (-1 = none)
+    ALuint bufferIndexes[10];
 	float panning;    ///< < 0 is left, 0 is center, > 0 is right
+    int numberOfBuffers;
 }
 Note;
 
