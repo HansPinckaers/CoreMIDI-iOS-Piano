@@ -12,29 +12,135 @@
 @end
 
 @implementation DemoViewController
+@synthesize midiHandler,pedal;
 
 - (id)initWithCoder:(NSCoder*)decoder
 {
 	if ((self = [super initWithCoder:decoder]))
 	{
 		playingArpeggio = NO;
-
+        pedaledNotes = [NSMutableArray array];
+        
 		// Create the player and tell it which sound bank to use.
 		player = [[SoundBankPlayer alloc] init];
 		[player setSoundBank:@"Piano"];
 
-		// We use a timer to play arpeggios.
+        self.midiHandler = [[NAMIDI alloc] init];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(midiNotePlayed:) name:kNAMIDINoteOnNotification 
+                                                   object:nil];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(midiNoteStopped:) name:kNAMIDINoteOffNotification 
+                                                   object:nil];
+
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(midiPedalDown:) name:kNAMIDIPedalOnNotification 
+                                                   object:nil];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(midiPedalUp:) name:kNAMIDIPedalOffNotification 
+                                                   object:nil];
+        
+        
+        // Important for background mode
+        audioSession = [AVAudioSession sharedInstance];
+        NSError *err = nil;
+        [audioSession setCategory :AVAudioSessionCategoryPlayAndRecord error:&err];
+        
+//        If you use this you get the red 'recording' statusbar. Maybe you want that:
+//
+//        NSString *fileName = @"test.aiff";
+//        NSString *docsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) objectAtIndex:0];
+//        
+//        NSString *soundFile = [docsDir stringByAppendingPathComponent:fileName];
+//        NSURL *soundFileURL = [NSURL fileURLWithPath:soundFile];
+//
+//        
+//        NSMutableDictionary *recordSettings = [[NSMutableDictionary alloc] init];
+//        // We can use kAudioFormatAppleIMA4 (4:1 compression) or kAudioFormatLinearPCM for nocompression
+//        [recordSettings setValue :[NSNumber numberWithInt:kAudioFormatAppleIMA4] forKey:AVFormatIDKey];
+//        // We can use 44100, 32000, 24000, 16000 or 12000 depending on sound quality
+//        [recordSettings setValue:[NSNumber numberWithFloat:12000.0] forKey:AVSampleRateKey];        
+//        // We can use 2(if using additional h/w) or 1 (iPhone only has one microphone)
+//        [recordSettings setValue:[NSNumber numberWithInt: 1] forKey:AVNumberOfChannelsKey];
+//                
+//        NSError *error = nil;
+//        
+//        recorder = [[AVAudioRecorder alloc] initWithURL:soundFileURL settings:recordSettings error:&error];		
+//        [recorder prepareToRecord];
+
+        // We use a timer to play arpeggios.
 		[self startTimer];
 	}
 	return self;
 }
 
+- (IBAction)startBackgroundAndMidi
+{
+    [audioSession setActive:YES error:nil];
+
+    self.midiHandler = [[NAMIDI alloc] init];
+    
+//    [recorder record]; if you want the recording statusbar
+}
+
+- (IBAction)stopBackgroundAndMidi
+{
+    [audioSession setActive:NO error:nil];
+
+//    Disable red statusbar
+//    
+//    [recorder stop];
+//    NSString *fileName = @"test.aiff";
+//    NSString *docsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) objectAtIndex:0];
+//    
+//    NSString *soundFile = [docsDir stringByAppendingPathComponent:fileName];
+//    NSURL *soundFileURL = [NSURL fileURLWithPath:soundFile];
+//
+//    [[NSFileManager defaultManager] removeItemAtURL:soundFileURL error:nil];
+}
+
+- (void)midiNotePlayed:(NSNotification*)notification
+{
+    int notePlayed = [[notification.userInfo objectForKey:kNAMIDI_NoteKey] intValue];
+    int velocity = [[notification.userInfo objectForKey:kNAMIDI_VelocityKey] intValue];
+    float gain = velocity / (127.0f / 0.5f); // max gain = 0.5f
+        
+    [pedaledNotes removeObject:[NSNumber numberWithInt:notePlayed]];
+    
+    [player noteOn:notePlayed gain:gain];
+}
+
+- (void)midiNoteStopped:(NSNotification*)notification
+{
+    int notePlayed = [[notification.userInfo objectForKey:kNAMIDI_NoteKey] intValue];
+    
+    if(!self.pedal)
+    {
+        [player noteOff:notePlayed];
+    }
+    else {
+        [pedaledNotes addObject:[NSNumber numberWithInt:notePlayed]];
+    }
+}
+
+- (void)midiPedalDown:(NSNotification*)notification
+{
+    self.pedal = YES;
+}
+
+- (void)midiPedalUp:(NSNotification*)notification
+{
+    self.pedal = NO;
+    
+    for(NSNumber *noteNum in pedaledNotes)
+    {
+        [player noteOff:[noteNum intValue]];
+    }
+}
+
 - (void)dealloc
 {
 	[self stopTimer];
-	[player release];
 
-	[super dealloc];
 }
 
 - (IBAction)strumCMajorChord
@@ -83,7 +189,7 @@
 	if (!playingArpeggio)
 	{
 		playingArpeggio = YES;
-		arpeggioNotes = [notes retain];
+		arpeggioNotes = notes;
 		arpeggioIndex = 0;
 		arpeggioDelay = delay;
 		arpeggioStartTime = CACurrentMediaTime();
@@ -123,7 +229,6 @@
 			if (arpeggioIndex == [arpeggioNotes count])
 			{
 				playingArpeggio = NO;
-				[arpeggioNotes release];
 				arpeggioNotes = nil;
 			}
 			else  // schedule next note

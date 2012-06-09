@@ -1,5 +1,7 @@
 
 #import "SoundBankPlayer.h"
+#import "NAMIDI.h"
+#import <AVFoundation/AVFoundation.h>
 
 @interface DemoViewController : UIViewController
 {
@@ -10,6 +12,9 @@
 	int arpeggioIndex;
 	double arpeggioStartTime;
 	double arpeggioDelay;
+    AVAudioRecorder *recorder;
+    AVAudioSession *audioSession;
+    NSMutableArray *pedaledNotes;
 }
 
 - (IBAction)strumCMajorChord;
@@ -17,5 +22,12 @@
 
 - (IBAction)strumAMinorChord;
 - (IBAction)arpeggiateAMinorChord;
+
+
+- (IBAction)startBackgroundAndMidi;
+- (IBAction)stopBackgroundAndMidi;
+
+@property (nonatomic, strong) NAMIDI* midiHandler;
+@property (nonatomic, assign) BOOL pedal;
 
 @end
