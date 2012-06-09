@@ -24,10 +24,6 @@ Kudos to
 * NSLogger for debugging with keyboard connected to iPad – Florent Pillet [NSLogger github repo](https://github.com/fpillet/NSLogger)
 * Soundfont by Roberto Gordo Saez [License](http://freepats.zenvoid.org/sf2/acoustic_grand_piano_ydp_20080910.txt) / [Link to download](http://freepats.zenvoid.org/sf2/acoustic_grand_piano_ydp_20080910.sf2])
 
-This is a sample-based audio player that uses OpenAL. A "sound bank" can have 
-multiple samples, each covering one or more notes. This allows you to implement 
-a full instrument with only a few samples (like SoundFonts but simpler).
-
 Sound files copyright:
 
 	Copyright 2008, Roberto Gordo Saez <roberto.gordo@gmail.com>
