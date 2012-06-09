@@ -14,11 +14,9 @@
 	return YES;
 }
 
-- (void)dealloc
+- (void)applicationDidReceiveMemoryWarning:(UIApplication *)application
 {
-	[viewController release];
-	[window release];
-	[super dealloc];
+    NSLog(@"warning!");
+    
 }
-
 @end

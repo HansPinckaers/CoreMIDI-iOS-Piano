@@ -7,7 +7,7 @@
 	DemoViewController* viewController;
 }
 
-@property (nonatomic, retain) IBOutlet UIWindow* window;
-@property (nonatomic, retain) IBOutlet DemoViewController* viewController;
+@property (nonatomic) IBOutlet UIWindow* window;
+@property (nonatomic) IBOutlet DemoViewController* viewController;
 
 @end
